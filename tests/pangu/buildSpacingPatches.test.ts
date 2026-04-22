@@ -51,6 +51,74 @@ describe("buildSpacingPatches", () => {
     expect(patches).toHaveLength(1);
     expect(patches[0]?.text).toBe("這是 A/B 測試");
   });
+
+  it("does not add outer spacing around fullwidth double quotes", () => {
+    const markdown = "前面“quoted”后面";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe("前面“quoted”后面");
+  });
+
+  it("preserves nested fullwidth double quotes without adding outer spacing", () => {
+    const markdown = "前面“a“b”c”后面";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe("前面“a“b”c”后面");
+  });
+
+  it("keeps fullwidth paired punctuation untouched in Chinese text", () => {
+    const markdown = ["前面《书名》后面", "前面（备注）后面", "前面【重点】后面"].join("\n");
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe(["前面《书名》后面", "前面（备注）后面", "前面【重点】后面"].join("\n"));
+  });
+
+  it("keeps spacing fixes inside fullwidth paired punctuation", () => {
+    const markdown = "前面（Test备注）后面";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe("前面（Test 备注）后面");
+  });
+
+  it("keeps later matched quotes stable when an earlier quote is unmatched", () => {
+    const markdown = "前面“未闭合 后面“quoted”结尾";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toContain("后面“quoted”结尾");
+    expect(fixed).not.toContain("后面 “quoted”");
+    expect(fixed).not.toContain("“quoted” 结尾");
+  });
+
+  it("still fixes regular CJK-Latin spacing outside fullwidth paired punctuation", () => {
+    const markdown = "这是Test（备注）段落";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe("这是 Test（备注）段落");
+  });
 });
 
 describe("applyRangePatches", () => {
