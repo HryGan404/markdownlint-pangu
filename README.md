@@ -209,7 +209,7 @@ markdownlint-pangu fix --help
 ## 从源码开发
 
 ```bash
-git clone https://github.com/Ins1nuatE/markdownlint-pangu.git
+git clone https://github.com/HryGan404/markdownlint-pangu.git
 cd markdownlint-pangu
 npm install
 npm run build

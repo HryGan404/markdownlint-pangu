@@ -24,15 +24,15 @@
     "cli",
     "lint"
   ],
-  "author": "Ins1nuatE",
+  "author": "HryGan404",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ins1nuatE/markdownlint-pangu.git"
+    "url": "git+https://github.com/HryGan404/markdownlint-pangu.git"
   },
-  "homepage": "https://github.com/Ins1nuatE/markdownlint-pangu#readme",
+  "homepage": "https://github.com/HryGan404/markdownlint-pangu#readme",
   "bugs": {
-    "url": "https://github.com/Ins1nuatE/markdownlint-pangu/issues"
+    "url": "https://github.com/HryGan404/markdownlint-pangu/issues"
   },
   "engines": {
     "node": ">=20"
