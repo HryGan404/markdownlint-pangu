@@ -6,6 +6,13 @@ interface MarkdownlintRuleOptions {
   disable?: string[];
 }
 
+const DEFAULT_DISABLED_RULES = [
+  {
+    name: "MD013",
+    aliases: ["line-length", "line_length"],
+  },
+];
+
 export async function runMarkdownlint(
   filePath: string,
   content: string,
@@ -32,13 +39,35 @@ function resolveMarkdownlintConfig(
   const nextConfig: Record<string, unknown> =
     rules.length > 0
       ? buildRulesOnlyConfig(config, rules)
-      : { ...config };
+      : withDefaultDisabledRules(config);
 
   for (const ruleName of disable) {
     nextConfig[ruleName] = false;
   }
 
   return nextConfig;
+}
+
+function withDefaultDisabledRules(config: Record<string, unknown>): Record<string, unknown> {
+  const nextConfig = { ...config };
+
+  for (const rule of DEFAULT_DISABLED_RULES) {
+    if (!hasRuleConfig(config, rule.name, rule.aliases)) {
+      nextConfig[rule.name] = false;
+    }
+  }
+
+  return nextConfig;
+}
+
+function hasRuleConfig(
+  config: Record<string, unknown>,
+  ruleName: string,
+  aliases: string[],
+): boolean {
+  const names = new Set([ruleName, ...aliases].map((name) => name.toUpperCase()));
+
+  return Object.keys(config).some((key) => names.has(key.toUpperCase()));
 }
 
 function buildRulesOnlyConfig(

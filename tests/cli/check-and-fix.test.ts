@@ -111,6 +111,62 @@ describe("CLI check/fix", () => {
     expect(withRules.stdout).not.toContain("MD009");
   });
 
+  it("ignores markdownlint line length by default", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-"));
+    const filePath = join(cwd, "LINE_LENGTH.md");
+    const longLine =
+      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
+
+    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
+
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--pangu-off", filePath],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("MD013");
+  });
+
+  it("allows markdownlint line length when explicitly selected", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-rules-"));
+    const filePath = join(cwd, "LINE_LENGTH_RULES.md");
+    const longLine =
+      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
+
+    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
+
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--pangu-off", "--rules", "MD013", filePath],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("MD013");
+  });
+
+  it("respects markdownlint line length when enabled by tag config", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-tag-"));
+    const filePath = join(cwd, "LINE_LENGTH_TAG.md");
+    const configPath = join(cwd, ".markdownlint.json");
+    const longLine =
+      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
+
+    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
+    await writeFile(configPath, JSON.stringify({ line_length: true }, null, 2), "utf8");
+
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--pangu-off", "--config", configPath, filePath],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("MD013");
+  });
+
   it("applies --disable to markdownlint checks", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-disable-"));
     const filePath = join(cwd, "DISABLE.md");
