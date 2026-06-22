@@ -85,6 +85,23 @@ describe("buildSpacingPatches", () => {
     expect(fixed).toBe(["前面《书名》后面", "前面（备注）后面", "前面【重点】后面"].join("\n"));
   });
 
+  it("keeps additional fullwidth paired punctuation untouched in Chinese text", () => {
+    const markdown = [
+      "前面‘quoted’后面",
+      "前面「quoted」后面",
+      "前面『quoted』后面",
+      "前面〈书名〉后面",
+      "前面〔备注〕后面",
+    ].join("\n");
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe(markdown);
+  });
+
   it("keeps spacing fixes inside fullwidth paired punctuation", () => {
     const markdown = "前面（Test备注）后面";
 
@@ -107,6 +124,17 @@ describe("buildSpacingPatches", () => {
     expect(fixed).toContain("后面“quoted”结尾");
     expect(fixed).not.toContain("后面 “quoted”");
     expect(fixed).not.toContain("“quoted” 结尾");
+  });
+
+  it("keeps mixed nested fullwidth punctuation stable", () => {
+    const markdown = "前面「a『b』c」后面";
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe("前面「a『b』c」后面");
   });
 
   it("still fixes regular CJK-Latin spacing outside fullwidth paired punctuation", () => {
