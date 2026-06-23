@@ -1,4 +1,9 @@
-import type { CliOptions, PanguConfig, ResolvedOptions } from "../shared/types.js";
+import {
+  DEFAULT_OUTPUT_FORMAT,
+  type CliOptions,
+  type PanguConfig,
+  type ResolvedOptions,
+} from "../shared/types.js";
 
 interface MergeOptionsInput {
   command: "check" | "fix";
@@ -26,7 +31,7 @@ export function mergeOptions(input: MergeOptionsInput): ResolvedOptions {
       ignoreBlocks: input.panguConfig.pangu?.ignoreBlocks ?? [],
     },
     output: {
-      format: input.cli.format ?? "text",
+      format: input.cli.format ?? DEFAULT_OUTPUT_FORMAT,
       quiet: input.cli.quiet ?? false,
     },
     input: {

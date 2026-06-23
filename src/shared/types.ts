@@ -1,5 +1,7 @@
 export type CommandName = "check" | "fix";
-export type OutputFormat = "text" | "json";
+export const OUTPUT_FORMATS = ["text", "json"] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+export const DEFAULT_OUTPUT_FORMAT: OutputFormat = "text";
 export type Severity = "error";
 
 export interface CliOptions {
