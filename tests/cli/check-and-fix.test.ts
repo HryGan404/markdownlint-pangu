@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const spawnOptions = {
   cwd: process.cwd(),
@@ -10,11 +10,6 @@ const spawnOptions = {
 };
 
 describe("CLI check/fix", () => {
-  beforeAll(() => {
-    const build = spawnSync("npm", ["run", "build"], spawnOptions);
-    expect(build.status).toBe(0);
-  });
-
   it("checks and fixes a Markdown file", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-"));
     const filePath = join(cwd, "README.md");

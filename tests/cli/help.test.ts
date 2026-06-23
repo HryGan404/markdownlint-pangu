@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   version: string;
@@ -12,16 +12,6 @@ const spawnOptions = {
 };
 
 describe("CLI smoke tests", () => {
-  beforeAll(() => {
-    const buildResult = spawnSync("npm", ["run", "build"], spawnOptions);
-
-    if (buildResult.status !== 0) {
-      throw new Error(
-        `npm run build failed: ${buildResult.stderr ?? buildResult.stdout}`,
-      );
-    }
-  });
-
   it("prints help with check and fix commands from dist", () => {
     const result = spawnSync(
       "node",
