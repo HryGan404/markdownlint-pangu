@@ -1,6 +1,6 @@
 {
   "name": "markdownlint-pangu",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "CLI wrapper that combines markdownlint with safe pangu spacing for Markdown.",
   "type": "module",
   "bin": {
