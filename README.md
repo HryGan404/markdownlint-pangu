@@ -138,7 +138,7 @@ pangu 功能默认开启，用于检查和修复中英文之间缺少空格，�
 - fenced code block
 - inline code
 - URL / link destination
-- HTML
+- HTML 块；行内 HTML 标签之间的文本会被处理
 - front matter（目前仅识别 YAML `---`，不识别 TOML `+++`）
 - math block / inline math
 - definition / footnote 定义块（如 `[ref]: url`、`[^1]: ...`；行内脚注 `^[...]` 目前仍会被处理）
