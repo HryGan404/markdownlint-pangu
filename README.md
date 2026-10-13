@@ -77,7 +77,7 @@ cat README.md | markdownlint-pangu check --stdin --stdin-filepath README.md
 cat README.md | markdownlint-pangu fix --stdin --stdin-filepath README.md > fixed.md
 ```
 
-`--stdin-filepath` 是必需的，用来显示诊断位置，也让 `markdownlint` 能按文件路径匹配规则。
+`--stdin-filepath` 是必需的，用于诊断定位和规则匹配。
 
 ## markdownlint 规则
 
@@ -87,9 +87,9 @@ cat README.md | markdownlint-pangu fix --stdin --stdin-filepath README.md > fixe
 markdownlint-pangu check --config path/to/.markdownlint.json README.md
 ```
 
-本工具默认忽略 `MD013/line-length`，也就是 markdownlint 的行长度限制。普通中文文档里长链接、长句、表格比较常见，默认关闭这个规则可以减少噪音。
+本工具默认忽略 `MD013/line-length`，即 markdownlint 的行长度限制。
 
-如果你想重新启用行长度检查，可以在 `.markdownlint.json` 里配置 `MD013` / `line-length`，或用 `--rules` 显式选择它：
+重新启用行长度检查，可在 `.markdownlint.json` 里配置 `MD013` / `line-length`，或用 `--rules` 选择它：
 
 ```bash
 markdownlint-pangu check --pangu-off --rules MD013 README.md
@@ -111,7 +111,7 @@ markdownlint-pangu check --pangu-off --disable MD009 README.md
 
 ## pangu 空格检查
 
-pangu 功能默认开启，用来检查和修复中英文之间缺少空格的问题，例如：
+pangu 功能默认开启，用于检查和修复中英文之间缺少空格，例如：
 
 ```markdown
 这是README文件
@@ -130,7 +130,7 @@ pangu 功能默认开启，用来检查和修复中英文之间缺少空格的�
 - 列表项
 - 引用块
 - 表格单元格文本
-- 链接文本
+- 链接文本（行内链接 `[文字](url)`；引用式链接 `[文字][ref]` 暂不处理）
 - 图片 alt 文本
 
 默认不会处理这些区域：
@@ -139,11 +139,11 @@ pangu 功能默认开启，用来检查和修复中英文之间缺少空格的�
 - inline code
 - URL / link destination
 - HTML
-- front matter
+- front matter（目前仅识别 YAML `---`，不识别 TOML `+++`）
 - math block / inline math
-- definition / footnote 等结构区
+- definition / footnote 定义块（如 `[ref]: url`、`[^1]: ...`；行内脚注 `^[...]` 目前仍会被处理）
 
-此外，工具会保守保留 `/` 周围原本的空格，也会保留中文成对标点外侧原本的空格，例如 `《》`、`（）`、`【】`、`「」`、`『』` 等。
+此外，工具会保留 `/` 周围原本的空格，也会保留中文成对标点外侧原本的空格，例如 `《》`、`（）`、`【】`、`「」`、`『』` 等。
 
 ### pangu 配置
 
@@ -171,6 +171,25 @@ markdownlint-pangu check --pangu-config path/to/.markdownlint-pangu.json README.
 
 `ignorePatterns` 和 `ignoreBlocks` 当前都是普通字符串匹配，不是正则表达式。
 
+## 相对上游的默认差异
+
+本工具相对上游调整过的默认行为如下，基线为直接调用 `markdownlint` 库与 `pangu.spacingText()`。
+
+### markdownlint
+
+- 默认关闭 `MD013` / `line-length`（行长度限制）。上游库默认启用全部规则，本工具只在用户配置未提及该规则时才注入 `MD013: false`，别名 `line-length` / `line_length` 同样被识别。
+- 自动读取当前目录下的 `.markdownlint.json`。上游库不查找配置文件，需调用方传入。本工具只识别这一个文件名，不向上级目录搜索，也不读取 `.markdownlint.jsonc` / `.markdownlint.yaml` / `package.json`，其他格式用 `--config` 指定。
+- 新增 `--rules` 与 `--disable`：`--rules` 只启用指定规则，`--disable` 在其之后叠加 `false`，优先级更高。
+
+### pangu
+
+- 默认开启，并可通过 `--pangu-off` 或 `.markdownlint-pangu.json` 的 `pangu.enabled: false` 关闭。
+- 新增 `ignorePatterns` 与 `ignoreBlocks` 忽略机制，细节见上文「pangu 配置」。
+- 只把「安全文本区域」交给 pangu 处理，具体范围见上文「pangu 空格检查」。
+- 在 `pangu.spacingText()` 的结果上做两处回调，细节见上文「pangu 空格检查」：
+  - 保留 `/` 周围原本的空格：如 `这是A/B测试`，上游会变成 `这是 A / B 测试`，本工具保持 `这是 A/B 测试`。
+  - 保留中文成对标点外侧原本的空格：如 `前面“quoted”后面`，上游会变成 `前面 “quoted” 后面`，本工具保持原样。
+
 ## CLI 选项
 
 `check` 和 `fix` 共享这些选项：
@@ -197,14 +216,14 @@ markdownlint-pangu fix --help
 ## 输出与退出码
 
 - `0`：没有剩余诊断
-- `1`：存在诊断，或配置加载 / 运行过程出错
-- `2`：CLI 参数使用错误
+- `1`：存在诊断，或配置加载 / 运行过程出错；commander 的命令行解析错误（未知选项、非法 `--format` 值等）也返回 `1`
+- `2`：工具自身的参数校验错误（如未提供输入路径、`--stdin` 缺少 `--stdin-filepath`、stdin 模式下同时传入路径）
 
 补充说明：
 
 - `fix --stdin` 的 stdout 只输出修复后的正文
-- `fix --stdin` 的诊断信息输出到 stderr，避免污染管道结果
-- `--format json` 会输出统一诊断模型的 JSON 数组，适合脚本或 CI 使用
+- `fix --stdin` 的诊断信息输出到 stderr；仍有剩余诊断时退出码同样是 `1`
+- `--format json` 会输出统一诊断模型的 JSON 数组
 
 ## 从源码开发
 
