@@ -9,6 +9,9 @@ const spawnOptions = {
   encoding: "utf8" as const,
 };
 
+const LONG_LINE =
+  "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
+
 describe("CLI check/fix", () => {
   it("checks and fixes a Markdown file", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-"));
@@ -109,10 +112,8 @@ describe("CLI check/fix", () => {
   it("ignores markdownlint line length by default", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-"));
     const filePath = join(cwd, "LINE_LENGTH.md");
-    const longLine =
-      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
 
-    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
+    await writeFile(filePath, `# Title\n\n${LONG_LINE}\n`, "utf8");
 
     const result = spawnSync(
       "node",
@@ -127,10 +128,8 @@ describe("CLI check/fix", () => {
   it("allows markdownlint line length when explicitly selected", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-rules-"));
     const filePath = join(cwd, "LINE_LENGTH_RULES.md");
-    const longLine =
-      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
 
-    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
+    await writeFile(filePath, `# Title\n\n${LONG_LINE}\n`, "utf8");
 
     const result = spawnSync(
       "node",
@@ -142,25 +141,26 @@ describe("CLI check/fix", () => {
     expect(result.stdout).toContain("MD013");
   });
 
-  it("respects markdownlint line length when enabled by tag config", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-tag-"));
-    const filePath = join(cwd, "LINE_LENGTH_TAG.md");
-    const configPath = join(cwd, ".markdownlint.json");
-    const longLine =
-      "This line has many short words that continue far beyond the eighty column limit for markdownlint.";
+  it.each(["line_length", "line-length"])(
+    "respects the %s alias of MD013 in config",
+    async (alias) => {
+      const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-config-"));
+      const filePath = join(cwd, "LINE_LENGTH.md");
+      const configPath = join(cwd, ".markdownlint.json");
 
-    await writeFile(filePath, `# Title\n\n${longLine}\n`, "utf8");
-    await writeFile(configPath, JSON.stringify({ line_length: true }, null, 2), "utf8");
+      await writeFile(filePath, `# Title\n\n${LONG_LINE}\n`, "utf8");
+      await writeFile(configPath, JSON.stringify({ [alias]: true }, null, 2), "utf8");
 
-    const result = spawnSync(
-      "node",
-      ["dist/cli/index.js", "check", "--pangu-off", "--config", configPath, filePath],
-      spawnOptions,
-    );
+      const result = spawnSync(
+        "node",
+        ["dist/cli/index.js", "check", "--pangu-off", "--config", configPath, filePath],
+        spawnOptions,
+      );
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("MD013");
-  });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("MD013");
+    },
+  );
 
   it("applies --disable to markdownlint checks", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-disable-"));
@@ -225,5 +225,72 @@ describe("CLI check/fix", () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain("MD041");
     expect(await readFile(filePath, "utf8")).toBe(original);
+  });
+
+  it("returns 2 when no files match the pattern", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "no-such-dir/**/*.md"],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("No files matched the provided patterns.");
+  });
+
+  it("returns 2 when --stdin is missing --stdin-filepath", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--stdin"],
+      { ...spawnOptions, input: "text\n" },
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("--stdin requires --stdin-filepath");
+  });
+
+  it("returns 2 when paths are passed together with --stdin", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--stdin", "--stdin-filepath", "a.md", "extra.md"],
+      { ...spawnOptions, input: "text\n" },
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("Do not pass file paths when using --stdin.");
+  });
+
+  it("returns 1 for a commander parse error such as an unknown option", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--bogus", "README.md"],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unknown option");
+  });
+
+  it("returns 1 for an invalid --format value", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--format", "xml", "README.md"],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--format");
+  });
+
+  it("returns 1 from fix --stdin when diagnostics remain", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "a.md", "--pangu-off"],
+      { ...spawnOptions, input: "textREADME文本\n" },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("textREADME文本\n");
+    expect(result.stderr).toContain("MD041");
   });
 });
