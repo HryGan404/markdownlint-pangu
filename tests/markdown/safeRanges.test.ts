@@ -66,11 +66,55 @@ describe("collectSafeRanges", () => {
     expect(slices.some((slice) => slice.includes("中文Div文本"))).toBe(false);
   });
 
-  it("still processes text inside inline HTML", () => {
+  it("skips text between inline HTML tags", () => {
     const markdown = '正文<a href="#">中文Link</a>结尾';
     const slices = sliceRanges(markdown);
 
-    expect(slices.some((slice) => slice.includes("中文Link"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("正文"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("结尾"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("中文Link"))).toBe(false);
+  });
+
+  it("skips nested inline HTML content", () => {
+    const markdown = "前<b>中<i>文X</i>字</b>后";
+    const slices = sliceRanges(markdown);
+
+    expect(slices.some((slice) => slice.includes("前"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("后"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("文X"))).toBe(false);
+  });
+
+  it.each([
+    ["void element", "前<br>中<b>x</b>后"],
+    ["self-closing tag", "前<x/>中<b>x</b>后"],
+    ["comment", "前<!-- c -->中<b>x</b>后"],
+  ])(
+    "does not let a %s unbalance following tag pairs",
+    (_label, markdown) => {
+      const slices = sliceRanges(markdown);
+
+      expect(slices.some((slice) => slice.includes("前"))).toBe(true);
+      expect(slices.some((slice) => slice.includes("中"))).toBe(true);
+      expect(slices.some((slice) => slice.includes("后"))).toBe(true);
+      expect(slices.some((slice) => slice === "x")).toBe(false);
+    },
+  );
+
+  it("skips inline HTML whose attribute value contains a close tag", () => {
+    const markdown = '文字A<a title="x</y">中A文</a>文字B';
+    const slices = sliceRanges(markdown);
+
+    expect(slices.some((slice) => slice.includes("文字A"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("文字B"))).toBe(true);
+    expect(slices.some((slice) => slice.includes("中A文"))).toBe(false);
+  });
+
+  it("does not swallow text after an unmatched HTML tag", () => {
+    const unclosed = "前<b>中文未闭合";
+    const strayClose = "结尾</b>中文";
+
+    expect(sliceRanges(unclosed).some((slice) => slice.includes("中文未闭合"))).toBe(true);
+    expect(sliceRanges(strayClose).some((slice) => slice.includes("中文"))).toBe(true);
   });
 
   it("skips inline math and math blocks", () => {
