@@ -52,6 +52,121 @@ describe("buildSpacingPatches", () => {
     expect(patches[0]?.text).toBe("這是 A/B 測試");
   });
 
+  it("keeps compact ASCII brackets inside CJK text", () => {
+    const markdown = "HTTP(S)协议";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("HTTP(S) 协议");
+  });
+
+  it("preserves each mixed compact parenthetical independently", () => {
+    const markdown = "HTTP (S)和HTTP(S)协议";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("HTTP (S) 和 HTTP(S) 协议");
+  });
+
+  it("restores many compact parentheticals without changing their order", () => {
+    const markdown = "HTTP(S)协议 ".repeat(20_000).trimEnd();
+
+    const startedAt = performance.now();
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+    const elapsed = performance.now() - startedAt;
+
+    expect(fixed).toBe("HTTP(S) 协议 ".repeat(20_000).trimEnd());
+    expect(elapsed).toBeLessThan(5_000);
+  });
+
+  it("keeps normal CJK spacing while preserving compact ASCII brackets", () => {
+    const markdown = "使用HTTP(S)访问API接口";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("使用 HTTP(S) 访问 API 接口");
+  });
+
+  it("keeps pangu spacing after a compact ASCII parenthetical", () => {
+    const markdown = "HTTP(S)API测试";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("HTTP(S) API 测试");
+  });
+
+  it("round-trips private-use placeholder characters from the input", () => {
+    const markdown = "HTTP(S)测试\uE1000\uE1001";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("HTTP(S) 测试\uE1000\uE1001");
+  });
+
+  it("throws when no private-use delimiter is available", () => {
+    let privateUseCharacters = "";
+    for (let codePoint = 0xe100; codePoint <= 0xf8ff; codePoint += 1) {
+      privateUseCharacters += String.fromCodePoint(codePoint);
+    }
+    const markdown = `HTTP(S)${privateUseCharacters}测试`;
+
+    expect(() => {
+      buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    }).toThrow("Unable to allocate syntax placeholders");
+  });
+
+  it("does not add spacing around a literal double-asterisk boundary", () => {
+    const markdown = "**原文事实：**团队";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe(markdown);
+  });
+
+  it("keeps spacing fixes inside literal double-asterisk delimiters", () => {
+    const markdown = "**中文readme：**团队";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("**中文 readme：**团队");
+  });
+
+  it("keeps a following literal marker after an unmatched double asterisk", () => {
+    const markdown = "**未闭合，**原文事实：**团队";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toContain("**原文事实：**团队");
+    expect(fixed).not.toContain("**原文事实：** 团队");
+  });
+
+  it("keeps unmatched emphasis-like punctuation subject to normal spacing", () => {
+    const markdown = "这是a*b测试";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("这是 a * b 测试");
+  });
+
+  it("keeps underscore punctuation subject to normal spacing", () => {
+    const markdown = "这是a_b测试";
+
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe("这是 a_b 测试");
+  });
+
   it("does not add outer spacing around fullwidth double quotes", () => {
     const markdown = "前面“quoted”后面";
 

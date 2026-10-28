@@ -143,7 +143,12 @@ pangu 功能默认开启，用于检查和修复中英文之间缺少空格，�
 - math block / inline math
 - definition / footnote 定义块（如 `[ref]: url`、`[^1]: ...`；行内脚注 `^[...]` 目前仍会被处理）
 
-此外，工具会保留 `/` 周围原本的空格，也会保留中文成对标点外侧原本的空格，例如 `《》`、`（）`、`【】`、`「」`、`『』` 等。
+此外，工具会保留这些语法和标识符边界的原始状态：
+
+- `/` 周围原本的空格，例如 `A/B` 不会变成 `A / B`
+- 字母或数字直接夹住的单层紧凑括号，例如 `HTTP(S)` 不会变成 `HTTP (S)`；嵌套括号暂无整体保护
+- 未转义的 `**` 在中文或全角标点前的字面边界，避免 pangu 把 Markdown 标记当作拉丁符号
+- 中文成对标点外侧原本的空格，例如 `《》`、`（）`、`【】`、`「」`、`『』` 等
 
 ### pangu 配置
 
@@ -186,8 +191,10 @@ markdownlint-pangu check --pangu-config path/to/.markdownlint-pangu.json README.
 - 默认开启，并可通过 `--pangu-off` 或 `.markdownlint-pangu.json` 的 `pangu.enabled: false` 关闭。
 - 新增 `ignorePatterns` 与 `ignoreBlocks` 忽略机制，细节见上文「pangu 配置」。
 - 只把「安全文本区域」交给 pangu 处理，具体范围见上文「pangu 空格检查」。
-- 在 `pangu.spacingText()` 的结果上做两处回调，细节见上文「pangu 空格检查」：
+- 围绕 `pangu.spacingText()` 做有界的语法保护与结果回调，细节见上文「pangu 空格检查」：
   - 保留 `/` 周围原本的空格：如 `这是A/B测试`，上游会变成 `这是 A / B 测试`，本工具保持 `这是 A/B 测试`。
+  - 保留字母或数字直接夹住的单层紧凑括号：如 `HTTP(S)协议`，上游会变成 `HTTP (S) 协议`，本工具输出 `HTTP(S) 协议`；嵌套括号暂无整体保护。
+  - 保留未转义的 `**` 在 CJK 或全角标点前的一处字面边界，避免把 Markdown 标记当作普通拉丁符号；不保证任意含 `**` 的文本都保持 Markdown AST。单个 `*`、`_` 以及未形成该边界的符号仍按普通 pangu 规则处理。
   - 保留中文成对标点外侧原本的空格：如 `前面“quoted”后面`，上游会变成 `前面 “quoted” 后面`，本工具保持原样。
 
 ## CLI 选项

@@ -209,6 +209,30 @@ describe("CLI check/fix", () => {
     expect(result.stderr).toBe("");
   });
 
+  it("keeps technical brackets and emphasis delimiters intact during fix --stdin", () => {
+    const input = "# 标题\n\nHTTP (S)和HTTP(S)协议\n\n**原文事实：**团队\n";
+    const expected = "# 标题\n\nHTTP (S) 和 HTTP(S) 协议\n\n**原文事实：**团队\n";
+
+    const fix = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input },
+    );
+
+    expect(fix.status).toBe(0);
+    expect(fix.stdout).toBe(expected);
+    expect(fix.stderr).toBe("");
+
+    const check = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input: expected },
+    );
+
+    expect(check.status).toBe(0);
+    expect(check.stdout).toBe("");
+  });
+
   it("does not write partially fixed files when recheck still fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-no-partial-"));
     const filePath = join(cwd, "PARTIAL.md");
