@@ -3,9 +3,9 @@ import { applyFixes } from "markdownlint";
 import { runCheck } from "./runCheck.js";
 import { runMarkdownlint } from "../lint/runMarkdownlint.js";
 import { applyRangePatches } from "../markdown/applyRangePatches.js";
-import { collectSafeRanges } from "../markdown/safeRanges.js";
-import { buildSpacingPatches } from "../pangu/buildSpacingPatches.js";
-import { filterIgnoredRanges } from "../pangu/filterIgnoredRanges.js";
+import { collectSpacingRanges } from "../markdown/safeRanges.js";
+import { buildMaskedSpacingPatchesWithDiagnostics } from "../pangu/buildSpacingPatches.js";
+import { filterIgnoredSpacingRanges } from "../pangu/filterIgnoredRanges.js";
 import type { ResolvedOptions } from "../shared/types.js";
 
 interface RunFixInput {
@@ -21,13 +21,13 @@ interface RunFixResult {
 
 export async function runFix(input: RunFixInput): Promise<RunFixResult> {
   const spacingPatches = input.options.pangu.enabled
-    ? buildSpacingPatches(
+    ? buildMaskedSpacingPatchesWithDiagnostics(
         input.content,
-        filterIgnoredRanges(input.content, collectSafeRanges(input.content), {
+        filterIgnoredSpacingRanges(input.content, collectSpacingRanges(input.content), {
           ignorePatterns: input.options.pangu.ignorePatterns,
           ignoreBlocks: input.options.pangu.ignoreBlocks,
         }),
-      )
+      ).map(({ start, end, text }) => ({ start, end, text }))
     : [];
 
   const afterPangu = applyRangePatches(input.content, spacingPatches);

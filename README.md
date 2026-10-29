@@ -183,7 +183,7 @@ markdownlint-pangu check --pangu-config path/to/.markdownlint-pangu.json README.
 ### markdownlint
 
 - 默认关闭 `MD013` / `line-length`（行长度限制）。上游库默认启用全部规则，本工具只在用户配置未提及该规则时才注入 `MD013: false`，别名 `line-length` / `line_length` 同样被识别。
-- 自动读取当前目录下的 `.markdownlint.json`。上游库不查找配置文件，需调用方传入。本工具只识别这一个文件名，不向上级目录搜索，也不读取 `.markdownlint.jsonc` / `.markdownlint.yaml` / `package.json`，其他格式用 `--config` 指定。
+- 自动读取当前目录下的 `.markdownlint.json`。上游库不查找配置文件，需调用方传入。本工具只识别这一个文件名，不向上级目录搜索，也不读取 `.markdownlint.jsonc` / `.markdownlint.yaml` / `package.json`。`--config` 当前也只接受 JSON。
 - 新增 `--rules` 与 `--disable`：`--rules` 只启用指定规则，`--disable` 在其之后叠加 `false`，优先级更高。
 
 ### pangu

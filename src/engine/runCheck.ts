@@ -2,9 +2,9 @@ import type { Diagnostic } from "../diagnostics/types.js";
 import { mergeDiagnostics } from "../diagnostics/mergeDiagnostics.js";
 import { normalizeMarkdownlintResults } from "../lint/normalizeMarkdownlintResults.js";
 import { runMarkdownlint } from "../lint/runMarkdownlint.js";
-import { collectSafeRanges } from "../markdown/safeRanges.js";
-import { buildSpacingPatchesWithDiagnostics } from "../pangu/buildSpacingPatches.js";
-import { filterIgnoredRanges } from "../pangu/filterIgnoredRanges.js";
+import { collectSpacingRanges } from "../markdown/safeRanges.js";
+import { buildMaskedSpacingPatchesWithDiagnostics } from "../pangu/buildSpacingPatches.js";
+import { filterIgnoredSpacingRanges } from "../pangu/filterIgnoredRanges.js";
 import type { ResolvedOptions } from "../shared/types.js";
 
 interface RunCheckInput {
@@ -17,11 +17,11 @@ export async function runCheck(input: RunCheckInput): Promise<{ diagnostics: Dia
   const diagnostics: Diagnostic[] = [];
 
   if (input.options.pangu.enabled) {
-    const ranges = filterIgnoredRanges(input.content, collectSafeRanges(input.content), {
+    const ranges = filterIgnoredSpacingRanges(input.content, collectSpacingRanges(input.content), {
       ignorePatterns: input.options.pangu.ignorePatterns,
       ignoreBlocks: input.options.pangu.ignoreBlocks,
     });
-    const patches = buildSpacingPatchesWithDiagnostics(input.content, ranges);
+    const patches = buildMaskedSpacingPatchesWithDiagnostics(input.content, ranges);
 
     for (const patch of patches) {
       const position = offsetToLineColumn(input.content, patch.diagnosticOffset);
@@ -62,7 +62,10 @@ function offsetToLineColumn(content: string, offset: number): { line: number; co
   let lineStart = 0;
 
   for (let index = 0; index < offset; index += 1) {
-    if (content[index] === "\n") {
+    if (content[index] === "\r" || content[index] === "\n") {
+      if (content[index] === "\r" && content[index + 1] === "\n") {
+        continue;
+      }
       line += 1;
       lineStart = index + 1;
     }

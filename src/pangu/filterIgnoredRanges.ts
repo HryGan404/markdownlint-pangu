@@ -1,3 +1,5 @@
+import type { SpacingRange } from "../markdown/safeRanges.js";
+
 interface Range {
   start: number;
   end: number;
@@ -47,6 +49,42 @@ export function filterIgnoredRanges(
         end: range.start + text.length,
       });
     }
+  }
+
+  return filtered.filter((range) => range.start < range.end);
+}
+
+export function filterIgnoredSpacingRanges(
+  markdown: string,
+  ranges: SpacingRange[],
+  options: IgnoreOptions,
+): SpacingRange[] {
+  const ignorePatterns = sanitizeTokens(options.ignorePatterns);
+  const ignoreBlocks = sanitizeTokens(options.ignoreBlocks);
+  const filtered: SpacingRange[] = [];
+
+  for (const range of ranges) {
+    const text = markdown.slice(range.start, range.end);
+    if (matchesAnyToken(text, ignoreBlocks)) {
+      continue;
+    }
+
+    const ignoredSpans = collectIgnoredSpans(text, ignorePatterns);
+    if (ignoredSpans.length === 0) {
+      filtered.push(range);
+      continue;
+    }
+    filtered.push({
+      ...range,
+      blocked: [
+        ...range.blocked,
+        ...ignoredSpans.map((span) => ({
+          start: range.start + span.start,
+          end: range.start + span.end,
+          allowInsertionAtBoundary: false,
+        })),
+      ],
+    });
   }
 
   return filtered.filter((range) => range.start < range.end);

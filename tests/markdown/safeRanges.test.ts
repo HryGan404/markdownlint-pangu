@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
-import { collectSafeRanges } from "../../src/markdown/safeRanges.js";
+import { collectSafeRanges, collectSpacingRanges } from "../../src/markdown/safeRanges.js";
 
 function sliceRanges(markdown: string): string[] {
   return collectSafeRanges(markdown).map((range) => markdown.slice(range.start, range.end));
@@ -56,6 +56,17 @@ describe("collectSafeRanges", () => {
     const slices = sliceRanges(markdown);
 
     expect(slices.some((slice) => slice === String.raw`foo\\\\`)).toBe(true);
+  });
+
+  it("skips HTML embedded in image alt text", () => {
+    const markdown = '![图片<span data-x="中文ABC">AltText</span>文本](u)';
+    const htmlStart = markdown.indexOf("<span");
+    const htmlEnd = markdown.indexOf("</span>") + "</span>".length;
+
+    expect(collectSpacingRanges(markdown)[0]?.blocked).toContainEqual({
+      start: htmlStart,
+      end: htmlEnd,
+    });
   });
 
   it("skips block HTML content", () => {
@@ -162,5 +173,15 @@ describe("collectSafeRanges", () => {
     const tableSlices = sliceRanges(table);
     expect(tableSlices.some((slice) => slice.includes("表头Header"))).toBe(true);
     expect(tableSlices.some((slice) => slice.includes("单元Cell"))).toBe(true);
+  });
+
+  it("handles many inline HTML spans without quadratic range scans", () => {
+    const markdown = "<a>中文ABC</a> ".repeat(2_000);
+    const startedAt = performance.now();
+
+    const slices = sliceRanges(markdown);
+
+    expect(slices.some((slice) => slice.includes("中文ABC"))).toBe(false);
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
   });
 });

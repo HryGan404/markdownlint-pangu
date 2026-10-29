@@ -6,6 +6,7 @@ export interface SpacingIssue {
   start: number;
   end: number;
   diagnosticOffset: number;
+  insertions?: number[];
 }
 
 interface PanguLike {
@@ -37,12 +38,14 @@ const PAIRED_PUNCTUATION = [
 
 export function detectSpacingIssue(text: string, start: number, end: number): SpacingIssue | null {
   const protectedText = protectSpacingSyntax(text);
+  const pairedPunctuationPlaceholders = protectPairedPunctuation(protectedText);
   const rawFixed = restoreSpacingSyntax(
-    (pangu as unknown as PanguLike).spacingText(protectedText.value),
-    protectedText,
+    (pangu as unknown as PanguLike).spacingText(pairedPunctuationPlaceholders.value),
+    pairedPunctuationPlaceholders,
   );
-  const afterSlash = preserveOriginalSlashSpacing(text, rawFixed);
-  const fixed = preserveOriginalPairedPunctuationSpacing(text, afterSlash);
+  const afterAtoms = restoreLiteralAtoms(text, rawFixed);
+  const afterSlash = preserveOriginalSlashSpacing(text, afterAtoms);
+  const fixed = preservePairedPunctuationEdges(text, afterSlash);
   if (fixed === text) {
     return null;
   }
@@ -54,7 +57,29 @@ export function detectSpacingIssue(text: string, start: number, end: number): Sp
     start,
     end,
     diagnosticOffset: start + firstDiffIndex,
+    insertions: collectInsertionOffsets(text, fixed),
   };
+}
+
+function collectInsertionOffsets(original: string, fixed: string): number[] {
+  const insertions: number[] = [];
+  let originalIndex = 0;
+  let fixedIndex = 0;
+
+  while (fixedIndex < fixed.length) {
+    if (originalIndex < original.length && fixed[fixedIndex] === original[originalIndex]) {
+      originalIndex += 1;
+      fixedIndex += 1;
+      continue;
+    }
+    if (fixed[fixedIndex] !== " ") {
+      return [];
+    }
+    insertions.push(originalIndex);
+    fixedIndex += 1;
+  }
+
+  return originalIndex === original.length ? insertions : [];
 }
 
 function findFirstDiffIndex(original: string, fixed: string): number {
@@ -68,11 +93,66 @@ function findFirstDiffIndex(original: string, fixed: string): number {
   return limit;
 }
 
+function protectPairedPunctuation(text: ProtectedSpacingSyntax): ProtectedSpacingSyntax {
+  const values = [...text.values];
+  const punctuationAt = collectMatchedPairedPunctuationBoundaries(text.value);
+  if (punctuationAt.size === 0) {
+    return text;
+  }
+
+  const pieces: string[] = [];
+  let cursor = 0;
+
+  for (let index = 0; index < text.value.length; index += 1) {
+    const punctuation = punctuationAt.get(index);
+    if (!punctuation) {
+      continue;
+    }
+
+    pieces.push(
+      text.value.slice(cursor, index),
+      `${text.delimiter}${values.length}${text.delimiter}`,
+    );
+    values.push(punctuation);
+    cursor = index + punctuation.length;
+    index += punctuation.length - 1;
+  }
+
+  pieces.push(text.value.slice(cursor));
+  return { value: pieces.join(""), delimiter: text.delimiter, values };
+}
+
+function collectMatchedPairedPunctuationBoundaries(value: string): Map<number, string> {
+  const boundaries = new Map<number, string>();
+  const stack: Array<{ start: number; close: string }> = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const opening = PAIRED_PUNCTUATION.find(([open]) => value.startsWith(open, index));
+    if (opening) {
+      stack.push({ start: index, close: opening[1] });
+      index += opening[0].length - 1;
+      continue;
+    }
+
+    const closing = PAIRED_PUNCTUATION.find(([, close]) => value.startsWith(close, index));
+    if (!closing || stack.at(-1)?.close !== closing[1]) {
+      continue;
+    }
+
+    const matchedOpening = stack.pop()!;
+    const open = PAIRED_PUNCTUATION.find(([, close]) => close === matchedOpening.close)![0];
+    boundaries.set(matchedOpening.start, open);
+    boundaries.set(index, closing[1]);
+    index += closing[1].length - 1;
+  }
+
+  return boundaries;
+}
+
 function protectSpacingSyntax(text: string): ProtectedSpacingSyntax {
   const values: string[] = [];
   const protectedTokens: SyntaxToken[] = [];
   const delimiter = choosePlaceholderDelimiter(text);
-
   for (let index = 0; index < text.length; index += 1) {
     const previous = text[index - 1];
     const current = text[index];
@@ -126,6 +206,191 @@ function protectSpacingSyntax(text: string): ProtectedSpacingSyntax {
   pieces.push(text.slice(cursor));
 
   return { value: pieces.join(""), delimiter, values };
+}
+
+const LITERAL_ATOM =
+  /\\([!-/:-@[-`{-~])|&(?:#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
+
+interface LiteralAtom {
+  start: number;
+  value: string;
+}
+
+interface TextCharacter {
+  offset: number;
+  value: string;
+}
+
+function collectLiteralAtoms(text: string): LiteralAtom[] {
+  return [...text.matchAll(LITERAL_ATOM)].map((match) => ({
+    start: match.index,
+    value: match[0],
+  }));
+}
+
+function removeAtoms(text: string, atoms: LiteralAtom[]): TextCharacter[] {
+  const result: TextCharacter[] = [];
+  let atomIndex = 0;
+
+  for (let offset = 0; offset < text.length; offset += 1) {
+    const atom = atoms[atomIndex];
+    if (atom && offset === atom.start) {
+      offset += atom.value.length - 1;
+      atomIndex += 1;
+      continue;
+    }
+    result.push({ offset, value: text[offset]! });
+  }
+
+  return result;
+}
+
+function findInsertionOffsets(original: TextCharacter[], fixed: TextCharacter[]): number[] | null {
+  const insertions: number[] = [];
+  let originalIndex = 0;
+  let fixedIndex = 0;
+
+  while (fixedIndex < fixed.length) {
+    if (originalIndex < original.length && fixed[fixedIndex]!.value === original[originalIndex]!.value) {
+      originalIndex += 1;
+      fixedIndex += 1;
+      continue;
+    }
+    if (fixed[fixedIndex]!.value !== " ") {
+      return null;
+    }
+    insertions.push(originalIndex);
+    fixedIndex += 1;
+  }
+
+  return originalIndex === original.length ? insertions : null;
+}
+
+function isValidBoundary(text: string, atoms: LiteralAtom[], offset: number): boolean {
+  const previous = previousExplicitCharacter(text, atoms, offset);
+  const next = nextExplicitCharacter(text, atoms, offset);
+  if (previous == null || next == null) {
+    return false;
+  }
+  return (
+    (isCjkOrFullwidthPunctuation(previous) && /[A-Za-z0-9]/.test(next)) ||
+    (/[A-Za-z0-9]/.test(previous) && isCjkOrFullwidthPunctuation(next))
+  );
+}
+
+function previousExplicitCharacter(text: string, atoms: LiteralAtom[], offset: number): string | null {
+  const atomBefore = atoms.find((atom) => atom.start + atom.value.length === offset);
+  if (atomBefore) {
+    return text[atomBefore.start - 1] ?? null;
+  }
+  return text[offset - 1] ?? null;
+}
+
+function nextExplicitCharacter(text: string, atoms: LiteralAtom[], offset: number): string | null {
+  const atomAfter = atoms.find((atom) => atom.start === offset);
+  if (atomAfter) {
+    return text[atomAfter.start + atomAfter.value.length] ?? null;
+  }
+  return text[offset] ?? null;
+}
+
+function restoreLiteralAtoms(original: string, fixed: string): string {
+  const atoms = collectLiteralAtoms(original);
+  if (atoms.length === 0) {
+    return fixed;
+  }
+
+  const changed = findInsertionOffsets(
+    removeAtoms(original, atoms),
+    removeAtoms(fixed, atoms),
+  );
+  if (!changed) {
+    return original;
+  }
+
+  return applyInsertions(original, atoms, changed);
+}
+
+function applyInsertions(
+  original: string,
+  atoms: LiteralAtom[],
+  insertionIndexes: number[],
+): string {
+  const visible = removeAtoms(original, atoms);
+  const insertions = insertionIndexes.map((index) => {
+    return visible[index]?.offset ?? original.length;
+  });
+
+  if (insertions.some((offset) => !isValidBoundary(original, atoms, offset))) {
+    return original;
+  }
+
+  const pieces: string[] = [];
+  let cursor = 0;
+  for (const offset of insertions) {
+    pieces.push(original.slice(cursor, offset), " ");
+    cursor = offset;
+  }
+  pieces.push(original.slice(cursor));
+  return pieces.join("");
+}
+
+function preservePairedPunctuationEdges(original: string, fixed: string): string {
+  let normalized = fixed;
+
+  for (const [open, close] of PAIRED_PUNCTUATION) {
+    normalized = preserveCharacterEdge(original, normalized, open, "before");
+    normalized = preserveCharacterEdge(original, normalized, close, "after");
+  }
+
+  return normalized;
+}
+
+function preserveCharacterEdge(
+  original: string,
+  fixed: string,
+  character: string,
+  direction: "before" | "after",
+): string {
+  let normalized = fixed;
+  let originalIndex = 0;
+  let fixedIndex = 0;
+
+  while (true) {
+    originalIndex = original.indexOf(character, originalIndex);
+    fixedIndex = normalized.indexOf(character, fixedIndex);
+    if (originalIndex < 0 || fixedIndex < 0) {
+      return normalized;
+    }
+
+    const originalSpace = direction === "before"
+      ? countAdjacentSpaces(original, originalIndex, -1)
+      : countAdjacentSpaces(original, originalIndex + character.length, 1);
+    const fixedSpace = direction === "before"
+      ? countAdjacentSpaces(normalized, fixedIndex, -1)
+      : countAdjacentSpaces(normalized, fixedIndex + character.length, 1);
+
+    if (originalSpace !== fixedSpace) {
+      const start = direction === "before" ? fixedIndex - fixedSpace : fixedIndex + character.length;
+      const end = start + fixedSpace;
+      const replacement = " ".repeat(originalSpace);
+      normalized = normalized.slice(0, start) + replacement + normalized.slice(end);
+      fixedIndex = start + replacement.length;
+    }
+
+    originalIndex += character.length;
+    fixedIndex += character.length;
+  }
+}
+
+function countAdjacentSpaces(value: string, index: number, direction: -1 | 1): number {
+  let count = 0;
+  let cursor = index;
+  while (cursor >= 0 && cursor < value.length && value[cursor] === " ") {
+    count += 1;
+    cursor += direction;
+  }
+  return count;
 }
 
 function choosePlaceholderDelimiter(text: string): string {
@@ -241,35 +506,6 @@ function preserveOriginalSlashSpacing(original: string, fixed: string): string {
   }
 }
 
-function preserveOriginalPairedPunctuationSpacing(original: string, fixed: string): string {
-  let normalized = fixed;
-
-  for (const [open, close] of PAIRED_PUNCTUATION) {
-    const originalPairs = getMatchedPairedPunctuationRanges(original, open, close);
-    for (let index = originalPairs.length - 1; index >= 0; index -= 1) {
-      const fixedPairs = getMatchedPairedPunctuationRanges(normalized, open, close);
-      if (index >= fixedPairs.length) {
-        continue;
-      }
-
-      const originalPair = originalPairs[index]!;
-      const fixedPair = fixedPairs[index]!;
-      const originalLeading = original.slice(originalPair.leadingSpaceStart, originalPair.openStart);
-      const originalTrailing = original.slice(originalPair.closeEnd, originalPair.trailingSpaceEnd);
-      const fixedContent = normalized.slice(fixedPair.openStart, fixedPair.closeEnd);
-
-      normalized =
-        normalized.slice(0, fixedPair.leadingSpaceStart) +
-        originalLeading +
-        fixedContent +
-        originalTrailing +
-        normalized.slice(fixedPair.trailingSpaceEnd);
-    }
-  }
-
-  return normalized;
-}
-
 function getSlashSpacingSpan(
   value: string,
   slashIndex: number,
@@ -286,58 +522,4 @@ function getSlashSpacingSpan(
   }
 
   return { start, end };
-}
-
-function getMatchedPairedPunctuationRanges(
-  value: string,
-  open: string,
-  close: string,
-): Array<{
-  leadingSpaceStart: number;
-  openStart: number;
-  closeEnd: number;
-  trailingSpaceEnd: number;
-}> {
-  const pairs: Array<{
-    leadingSpaceStart: number;
-    openStart: number;
-    closeEnd: number;
-    trailingSpaceEnd: number;
-  }> = [];
-  const stack: number[] = [];
-
-  for (let index = 0; index < value.length; index += 1) {
-    if (value.startsWith(open, index)) {
-      stack.push(index);
-      index += open.length - 1;
-      continue;
-    }
-
-    if (!value.startsWith(close, index) || stack.length === 0) {
-      continue;
-    }
-
-    const openStart = stack.pop()!;
-    let leadingSpaceStart = openStart;
-    let trailingSpaceEnd = index + close.length;
-
-    while (leadingSpaceStart > 0 && value[leadingSpaceStart - 1] === " ") {
-      leadingSpaceStart -= 1;
-    }
-
-    while (trailingSpaceEnd < value.length && value[trailingSpaceEnd] === " ") {
-      trailingSpaceEnd += 1;
-    }
-
-    pairs.push({
-      leadingSpaceStart,
-      openStart,
-      closeEnd: index + close.length,
-      trailingSpaceEnd,
-    });
-    index += close.length - 1;
-  }
-
-  pairs.sort((left, right) => left.openStart - right.openStart);
-  return pairs;
 }

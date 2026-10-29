@@ -82,6 +82,23 @@ describe("runCheck", () => {
     });
   });
 
+  it("reports CR-only line endings at the correct line and column", async () => {
+    const filePath = "tests/fixtures/markdown/cr.md";
+    const content = "plain\r中文ABC";
+    const result = await runCheck({
+      filePath,
+      content,
+      options: createCheckOptions(),
+    });
+
+    const panguDiagnostics = result.diagnostics.filter((item) => item.source === "pangu");
+    expect(panguDiagnostics).toHaveLength(1);
+    expect(panguDiagnostics[0]).toMatchObject({
+      line: 2,
+      column: 3,
+    });
+  });
+
   it("respects ignorePatterns and ignoreBlocks when checking pangu diagnostics", async () => {
     const filePath = "tests/fixtures/markdown/check-input.md";
     const content = await readFile(filePath, "utf8");

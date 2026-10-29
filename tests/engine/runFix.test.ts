@@ -50,10 +50,18 @@ describe("runFix", () => {
     const filePath = "tests/fixtures/markdown/check-input.md";
 
     vi.doMock("../../src/pangu/buildSpacingPatches.js", () => ({
-      buildSpacingPatches: vi.fn(() => {
+      buildMaskedSpacingPatchesWithDiagnostics: vi.fn(() => {
         callOrder.push("buildSpacingPatches");
         return [{ start: 0, end: 1, text: "A" }];
       }),
+    }));
+
+    vi.doMock("../../src/pangu/filterIgnoredRanges.js", () => ({
+      filterIgnoredSpacingRanges: vi.fn((_markdown: string, ranges: unknown[]) => ranges),
+    }));
+
+    vi.doMock("../../src/markdown/safeRanges.js", () => ({
+      collectSpacingRanges: vi.fn(() => [{ start: 0, end: 1, blocked: [] }]),
     }));
 
     vi.doMock("../../src/markdown/applyRangePatches.js", () => ({

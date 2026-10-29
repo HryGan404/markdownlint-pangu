@@ -252,6 +252,19 @@ describe("buildSpacingPatches", () => {
     expect(fixed).toBe("前面「a『b』c」后面");
   });
 
+  it("handles a large paragraph of paired punctuation without quadratic slowdown", () => {
+    const markdown = "前面“a”后面 ".repeat(8_000).trimEnd();
+    const startedAt = performance.now();
+
+    const fixed = applyRangePatches(
+      markdown,
+      buildSpacingPatches(markdown, collectSafeRanges(markdown)),
+    );
+
+    expect(fixed).toBe(markdown);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("still fixes regular CJK-Latin spacing outside fullwidth paired punctuation", () => {
     const markdown = "这是Test（备注）段落";
 
@@ -265,6 +278,42 @@ describe("buildSpacingPatches", () => {
 });
 
 describe("applyRangePatches", () => {
+  it("applies many patches in linear time", () => {
+    const original = "中文ABC\n".repeat(10_000);
+    const patches = Array.from({ length: 10_000 }, (_, index) => {
+      const start = index * 6 + 2;
+      return { start, end: start + 3, text: "ABC" };
+    });
+    const startedAt = performance.now();
+
+    const result = applyRangePatches(original, patches);
+
+    expect(result).toBe(original);
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  it("builds masked spacing patches for an inline link", async () => {
+    const { buildMaskedSpacingPatchesWithDiagnostics } = await import(
+      "../../src/pangu/buildSpacingPatches.js"
+    );
+    const markdown = "中文[English](https://example.com)测试";
+
+    const patches = buildMaskedSpacingPatchesWithDiagnostics(markdown, [
+      {
+        start: 0,
+        end: markdown.length,
+        blocked: [
+          { start: 2, end: 3, allowInsertionAtBoundary: true },
+          { start: 10, end: 32, allowInsertionAtBoundary: true },
+        ],
+      },
+    ]);
+
+    expect(applyRangePatches(markdown, patches)).toBe(
+      "中文 [English](https://example.com) 测试",
+    );
+  });
+
   it("throws when a patch range is out of bounds", () => {
     expect(() => {
       applyRangePatches("abc", [{ start: -1, end: 1, text: "x" }]);

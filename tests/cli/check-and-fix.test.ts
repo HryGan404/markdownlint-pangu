@@ -109,6 +109,33 @@ describe("CLI check/fix", () => {
     expect(withRules.stdout).not.toContain("MD009");
   });
 
+  it("lets --rules override an explicit false config value", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-rules-false-"));
+    const filePath = join(cwd, "RULES_FALSE.md");
+    const configPath = join(cwd, "config.json");
+
+    await writeFile(filePath, `# Title\n\n${LONG_LINE}\n`, "utf8");
+    await writeFile(configPath, JSON.stringify({ MD013: false }), "utf8");
+
+    const result = spawnSync(
+      "node",
+      [
+        "dist/cli/index.js",
+        "check",
+        "--pangu-off",
+        "--config",
+        configPath,
+        "--rules",
+        "MD013",
+        filePath,
+      ],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("MD013");
+  });
+
   it("ignores markdownlint line length by default", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-line-length-"));
     const filePath = join(cwd, "LINE_LENGTH.md");
@@ -231,6 +258,107 @@ describe("CLI check/fix", () => {
 
     expect(check.status).toBe(0);
     expect(check.stdout).toBe("");
+  });
+
+  it("does not rewrite URLs in angle autolinks", () => {
+    const input = "# 标题\n\n<https://example.com/中文ABC>\n";
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(input);
+    expect(result.stderr).toBe("");
+  });
+
+  it("spaces text around inline links without entering the link syntax", () => {
+    const input = "# 标题\n\n中文[English](https://example.com)测试\n";
+    const expected = "# 标题\n\n中文 [English](https://example.com) 测试\n";
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(expected);
+    expect(result.stderr).toBe("");
+  });
+
+  it("preserves quotes around inline links and is idempotent", () => {
+    const input = "# 标题\n\n前面“[English](https://example.com)”后面\n";
+    const fix = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input },
+    );
+
+    expect(fix.status).toBe(0);
+    expect(fix.stdout).toBe(input);
+    expect(fix.stderr).toBe("");
+
+    const check = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", "--stdin", "--stdin-filepath", "README.md"],
+      { ...spawnOptions, input: fix.stdout },
+    );
+
+    expect(check.status).toBe(0);
+    expect(check.stdout).toBe("");
+    expect(check.stderr).toBe("");
+  });
+
+  it("processes nested image alt text without touching embedded HTML", () => {
+    const input = [
+      "# 标题",
+      "",
+      "![图片[AltText]文本](u)",
+      "",
+      '![x<span data-x="中文ABC">y</span>](u)',
+      "",
+    ].join("\n");
+    const expected = [
+      "# 标题",
+      "",
+      "![图片 [AltText] 文本](u)",
+      "",
+      '![x<span data-x="中文ABC">y</span>](u)',
+      "",
+    ].join("\n");
+    const result = spawnSync(
+      "node",
+      [
+        "dist/cli/index.js",
+        "fix",
+        "--stdin",
+        "--stdin-filepath",
+        "README.md",
+        "--markdownlint-off",
+      ],
+      { ...spawnOptions, input },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(expected);
+    expect(result.stderr).toBe("");
+  });
+
+  it("preserves HTML entities and escaped punctuation without corrupting them", () => {
+    const input = "# 标题\n\n中文&amp;ABC\n\n中文\\|English\n";
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "fix", "--stdin", "--stdin-filepath", "README.md"],
+      {
+        ...spawnOptions,
+        input,
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(input);
+    expect(result.stderr).toBe("");
   });
 
   it("does not write partially fixed files when recheck still fails", async () => {

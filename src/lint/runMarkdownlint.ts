@@ -80,7 +80,11 @@ function buildRulesOnlyConfig(
 
   for (const ruleName of rules) {
     if (Object.hasOwn(config, ruleName)) {
-      nextConfig[ruleName] = config[ruleName];
+      const configured = config[ruleName];
+      nextConfig[ruleName] =
+        configured === false
+          ? true
+          : configured;
       continue;
     }
 

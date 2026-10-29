@@ -6,6 +6,13 @@ export interface TextRange {
   start: number;
   end: number;
 }
+export interface SpacingRange extends TextRange {
+  blocked: BlockedRange[];
+}
+
+export interface BlockedRange extends TextRange {
+  allowInsertionAtBoundary?: boolean;
+}
 
 const SAFE_TEXT_PARENTS = new Set([
   "paragraph",
@@ -29,6 +36,12 @@ const DENY_ANCESTOR_TYPES = new Set([
   "html",
 ]);
 
+const INLINE_CONTAINER_TYPES = new Set([
+  "paragraph",
+  "heading",
+  "tableCell",
+]);
+
 export function collectSafeRanges(markdown: string): TextRange[] {
   const tree = parseMarkdown(markdown);
   const deniedHtmlRanges = collectHtmlDeniedRanges(tree);
@@ -39,6 +52,182 @@ export function collectSafeRanges(markdown: string): TextRange[] {
   return ranges.sort((left, right) => left.start - right.start);
 }
 
+export function collectSpacingRanges(markdown: string): SpacingRange[] {
+  const tree = parseMarkdown(markdown);
+  const deniedHtmlRanges = collectHtmlDeniedRanges(tree);
+  const ranges: SpacingRange[] = [];
+  collectSpacingContainers(
+    tree,
+    [],
+    markdown,
+    deniedHtmlRanges,
+    ranges,
+  );
+
+  return ranges.sort((left, right) => left.start - right.start);
+}
+
+function collectSpacingContainers(
+  node: Root | Content,
+  ancestors: Array<Root | Content>,
+  markdown: string,
+  deniedHtmlRanges: TextRange[],
+  ranges: SpacingRange[],
+): void {
+  if (INLINE_CONTAINER_TYPES.has(node.type)) {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start != null && end != null && start < end) {
+      const masks: BlockedRange[] = [];
+      collectBlockedRanges(node, ancestors, markdown, deniedHtmlRanges, masks);
+      ranges.push({ start, end, blocked: mergeNestedRanges(masks) });
+    }
+  }
+
+  if (!("children" in node) || !Array.isArray(node.children)) {
+    return;
+  }
+
+  const nextAncestors = [...ancestors, node];
+  for (const child of node.children as Content[]) {
+    collectSpacingContainers(
+      child,
+      nextAncestors,
+      markdown,
+      deniedHtmlRanges,
+      ranges,
+    );
+  }
+}
+
+function collectBlockedRanges(
+  node: Root | Content,
+  ancestors: Array<Root | Content>,
+  markdown: string,
+  deniedHtmlRanges: TextRange[],
+  ranges: BlockedRange[],
+): void {
+  if (node.type === "image" || node.type === "imageReference") {
+    const imageRange = nodeSpan(node);
+    const altRange = imageRange ? extractImageAltRange(markdown, node) : null;
+    if (imageRange) {
+      ranges.push({ start: imageRange.start, end: imageRange.start + 2 });
+      if (altRange) {
+        ranges.push(...collectHtmlDeniedRangesInImageAlt(markdown.slice(altRange.start, altRange.end), altRange.start));
+        const suffixStart = altRange.end + 1;
+        if (suffixStart < imageRange.end) {
+          ranges.push({ start: suffixStart, end: imageRange.end });
+        }
+      } else {
+        ranges.push({ start: imageRange.start + 2, end: imageRange.end });
+      }
+    }
+    return;
+  }
+
+  if (node.type === "link") {
+    const span = nodeSpan(node);
+    const child = node.children[0];
+    const childSpan = child ? nodeSpan(child) : null;
+    if (span && childSpan) {
+      if (isAutolink(node, markdown)) {
+        ranges.push(span);
+        return;
+      }
+      ranges.push({
+        start: span.start,
+        end: childSpan.start,
+        allowInsertionAtBoundary: true,
+      });
+      ranges.push({
+        start: childSpan.end,
+        end: span.end,
+        allowInsertionAtBoundary: true,
+      });
+    } else if (span) {
+      ranges.push(span);
+    }
+    return;
+  }
+
+  if (
+    node.type === "linkReference" ||
+    node.type === "inlineCode" ||
+    node.type === "inlineMath" ||
+    node.type === "footnoteReference"
+  ) {
+    const span = nodeSpan(node);
+    if (span) {
+      ranges.push(span);
+    }
+    return;
+  }
+
+  if (node.type === "html") {
+    const span = nodeSpan(node);
+    if (span) {
+      ranges.push(span);
+    }
+    return;
+  }
+
+  if (node.type === "text") {
+    const span = nodeSpan(node);
+    if (!span) {
+      return;
+    }
+    const blocked = deniedHtmlRanges.filter(
+      (range) => range.start < span.end && range.end > span.start,
+    );
+    ranges.push(...blocked);
+    return;
+  }
+
+  if (
+    node.type === "emphasis" ||
+    node.type === "strong" ||
+    node.type === "delete"
+  ) {
+    const span = nodeSpan(node);
+    const first = "children" in node && node.children.length > 0
+      ? nodeSpan(node.children[0]!)
+      : null;
+    const last = "children" in node && node.children.length > 0
+      ? nodeSpan(node.children.at(-1)!)
+      : null;
+    if (span && first && last) {
+      ranges.push({ start: span.start, end: first.start });
+      ranges.push({ start: last.end, end: span.end });
+    }
+  }
+
+  if ("children" in node && Array.isArray(node.children)) {
+    const nextAncestors = [...ancestors, node];
+    for (const child of node.children as Content[]) {
+      collectBlockedRanges(child, nextAncestors, markdown, deniedHtmlRanges, ranges);
+    }
+  }
+}
+
+function mergeNestedRanges(ranges: BlockedRange[]): BlockedRange[] {
+  const sorted = [...ranges].sort((left, right) => {
+    return left.start - right.start || right.end - left.end;
+  });
+  const merged: BlockedRange[] = [];
+
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (previous && range.start >= previous.start && range.end <= previous.end) {
+      previous.allowInsertionAtBoundary =
+        previous.allowInsertionAtBoundary === true && range.allowInsertionAtBoundary === true;
+      continue;
+    }
+    merged.push(range);
+  }
+
+  return merged;
+}
+
 function walkNode(
   node: Root | Content,
   ancestors: Array<Root | Content>,
@@ -47,7 +236,7 @@ function walkNode(
   ranges: TextRange[],
 ): void {
   if (node.type === "text") {
-    collectTextRange(node, ancestors, deniedHtmlRanges, ranges);
+    collectTextRange(node, ancestors, markdown, deniedHtmlRanges, ranges);
   }
 
   if (node.type === "image" || node.type === "imageReference") {
@@ -67,6 +256,7 @@ function walkNode(
 function collectTextRange(
   node: Text,
   ancestors: Array<Root | Content>,
+  markdown: string,
   deniedHtmlRanges: TextRange[],
   ranges: TextRange[],
 ): void {
@@ -79,7 +269,7 @@ function collectTextRange(
     return;
   }
 
-  if (parent.type === "link" && isAutolinkText(parent, node)) {
+  if (parent.type === "link" && isAutolinkText(parent, node, markdown)) {
     return;
   }
 
@@ -248,7 +438,26 @@ function isWithinRanges(start: number, end: number, ranges: TextRange[]): boolea
   return ranges.some((range) => start >= range.start && end <= range.end);
 }
 
-function isAutolinkText(parent: Link, node: Text): boolean {
+function nodeSpan(node: Root | Content): TextRange | null {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  return start == null || end == null || start >= end ? null : { start, end };
+}
+
+function isAutolink(node: Content, markdown: string): boolean {
+  if (node.type !== "link" || node.children.length !== 1) {
+    return false;
+  }
+  const child = node.children[0];
+  const span = nodeSpan(node);
+  if (!span || child?.type !== "text" || node.url !== child.value) {
+    return false;
+  }
+  const source = markdown.slice(span.start, span.end);
+  return source.startsWith("<") && source.endsWith(">");
+}
+
+function isAutolinkText(parent: Link, node: Text, markdown: string): boolean {
   if (parent.url !== node.value) {
     return false;
   }
@@ -261,7 +470,12 @@ function isAutolinkText(parent: Link, node: Text): boolean {
     return false;
   }
 
-  return parentStart === textStart && parentEnd === textEnd;
+  if (parentStart === textStart && parentEnd === textEnd) {
+    return true;
+  }
+
+  const source = markdown.slice(parentStart, parentEnd);
+  return source.startsWith("<") && source.endsWith(">");
 }
 
 function extractImageAltRange(markdown: string, node: Image | ImageReference): TextRange | null {
@@ -289,20 +503,59 @@ function extractImageAltRange(markdown: string, node: Image | ImageReference): T
 }
 
 function findImageAltEnd(source: string, from: number): number {
+  let depth = 1;
   for (let index = from; index < source.length; index += 1) {
-    if (source[index] === "]" && !isEscapedByOddBackslashes(source, index)) {
-      return index;
+    const character = source[index];
+    if (character === "\\") {
+      index += 1;
+      continue;
+    }
+    if (character === "[") {
+      depth += 1;
+      continue;
+    }
+    if (character === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
     }
   }
 
   return -1;
 }
 
-function isEscapedByOddBackslashes(source: string, index: number): boolean {
-  let backslashCount = 0;
-  for (let cursor = index - 1; cursor >= 0 && source[cursor] === "\\"; cursor -= 1) {
-    backslashCount += 1;
+function collectHtmlDeniedRangesInImageAlt(source: string, offset: number): TextRange[] {
+  const tags: Array<TextRange & { kind: HtmlTagKind }> = [];
+  const pattern = /<!--[\s\S]*?-->|<\/?[A-Za-z][^>]*>/g;
+
+  for (const match of source.matchAll(pattern)) {
+    tags.push({
+      start: offset + match.index,
+      end: offset + match.index + match[0].length,
+      kind: classifyHtmlTag(match[0]),
+    });
   }
 
-  return backslashCount % 2 === 1;
+  const ranges: TextRange[] = [];
+  let depth = 0;
+  let openStart = 0;
+  for (const tag of tags) {
+    if (tag.kind === "open") {
+      if (depth === 0) {
+        openStart = tag.start;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (tag.kind === "close" && depth > 0) {
+      depth -= 1;
+      if (depth === 0) {
+        ranges.push({ start: openStart, end: tag.end });
+      }
+    }
+  }
+
+  return ranges;
 }
