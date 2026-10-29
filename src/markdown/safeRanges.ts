@@ -42,6 +42,18 @@ const INLINE_CONTAINER_TYPES = new Set([
   "tableCell",
 ]);
 
+const PROTECTED_INLINE_TYPES = new Set([
+  "delete",
+  "emphasis",
+  "image",
+  "imageReference",
+  "inlineCode",
+  "inlineMath",
+  "link",
+  "linkReference",
+  "strong",
+]);
+
 export function collectSafeRanges(markdown: string): TextRange[] {
   const tree = parseMarkdown(markdown);
   const deniedHtmlRanges = collectHtmlDeniedRanges(tree);
@@ -74,6 +86,10 @@ function collectSpacingContainers(
   deniedHtmlRanges: TextRange[],
   ranges: SpacingRange[],
 ): void {
+  if (DENY_ANCESTOR_TYPES.has(node.type)) {
+    return;
+  }
+
   if (INLINE_CONTAINER_TYPES.has(node.type)) {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
@@ -113,6 +129,7 @@ function collectBlockedRanges(
     if (imageRange) {
       ranges.push({ start: imageRange.start, end: imageRange.start + 2 });
       if (altRange) {
+        ranges.push(...collectProtectedInlineRangesInImageAlt(markdown, altRange));
         ranges.push(...collectHtmlDeniedRangesInImageAlt(markdown.slice(altRange.start, altRange.end), altRange.start));
         const suffixStart = altRange.end + 1;
         if (suffixStart < imageRange.end) {
@@ -133,6 +150,12 @@ function collectBlockedRanges(
       if (isAutolink(node, markdown)) {
         ranges.push(span);
         return;
+      }
+      for (const linkChild of node.children) {
+        const linkChildSpan = nodeSpan(linkChild);
+        if (linkChildSpan && PROTECTED_INLINE_TYPES.has(linkChild.type)) {
+          ranges.push(linkChildSpan);
+        }
       }
       ranges.push({
         start: span.start,
@@ -454,7 +477,10 @@ function isAutolink(node: Content, markdown: string): boolean {
     return false;
   }
   const source = markdown.slice(span.start, span.end);
-  return source.startsWith("<") && source.endsWith(">");
+  return (
+    (source.startsWith("<") && source.endsWith(">")) ||
+    !source.startsWith("[")
+  );
 }
 
 function isAutolinkText(parent: Link, node: Text, markdown: string): boolean {
@@ -557,5 +583,37 @@ function collectHtmlDeniedRangesInImageAlt(source: string, offset: number): Text
     }
   }
 
+  return ranges;
+}
+
+function collectProtectedInlineRangesInImageAlt(
+  markdown: string,
+  altRange: TextRange,
+): TextRange[] {
+  const altSource = markdown.slice(altRange.start, altRange.end);
+  return collectProtectedNodeRanges(parseMarkdown(altSource)).map((range) => ({
+    start: altRange.start + range.start,
+    end: altRange.start + range.end,
+  }));
+}
+
+function collectProtectedNodeRanges(tree: Root): TextRange[] {
+  const ranges: TextRange[] = [];
+
+  function visit(node: Root | Content): void {
+    const span = nodeSpan(node);
+    if (span && PROTECTED_INLINE_TYPES.has(node.type)) {
+      ranges.push(span);
+      return;
+    }
+
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children as Content[]) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(tree);
   return ranges;
 }

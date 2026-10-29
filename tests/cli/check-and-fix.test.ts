@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -108,6 +108,37 @@ describe("CLI check/fix", () => {
     expect(withRules.status).toBe(0);
     expect(withRules.stdout).not.toContain("MD009");
   });
+
+  it.each(["MD013", "line-length", "line_length"])(
+    "preserves line-length options through --rules %s",
+    async (ruleName) => {
+      const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-rules-alias-"));
+      const filePath = join(cwd, "RULE_ALIAS.md");
+      const configPath = join(cwd, "config.json");
+
+      await writeFile(filePath, `# Title\n\n${LONG_LINE}\n`, "utf8");
+      await writeFile(configPath, JSON.stringify({ "line-length": { line_length: 200 } }), "utf8");
+
+      const result = spawnSync(
+        "node",
+        [
+          "dist/cli/index.js",
+          "check",
+          "--pangu-off",
+          "--config",
+          configPath,
+          "--rules",
+          ruleName,
+          filePath,
+        ],
+        spawnOptions,
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe("");
+    },
+  );
 
   it("lets --rules override an explicit false config value", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-rules-false-"));
@@ -273,6 +304,31 @@ describe("CLI check/fix", () => {
     expect(result.stderr).toBe("");
   });
 
+  it.each([
+    ["bare URLs", "访问https://e.test/path?x=中文ABC\n"],
+    ["footnote definitions", "正文[^1]\n\n[^1]: 脚注Footnote文本\n"],
+    ["block-changing paragraph continuations", "中文ABC\n-中\n"],
+    ["link label syntax", "[**中文ABC**](u)\n"],
+    ["image alt syntax", "![中文`ABC`测试](u)\n"],
+  ])("leaves %s unchanged", (_label, input) => {
+    const result = spawnSync(
+      "node",
+      [
+        "dist/cli/index.js",
+        "fix",
+        "--stdin",
+        "--stdin-filepath",
+        "README.md",
+        "--markdownlint-off",
+      ],
+      { ...spawnOptions, input },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(input);
+    expect(result.stderr).toBe("");
+  });
+
   it("spaces text around inline links without entering the link syntax", () => {
     const input = "# 标题\n\n中文[English](https://example.com)测试\n";
     const expected = "# 标题\n\n中文 [English](https://example.com) 测试\n";
@@ -379,6 +435,30 @@ describe("CLI check/fix", () => {
     expect(await readFile(filePath, "utf8")).toBe(original);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "preserves the original file when a write is interrupted",
+    async () => {
+      const cwd = await mkdtemp(join(tmpdir(), "markdownlint-pangu-cli-write-failure-"));
+      const filePath = join(cwd, "WRITE_FAILURE.md");
+      const original = "中文ABC\n".repeat(2_000);
+
+      await writeFile(filePath, original, "utf8");
+
+      const result = spawnSync(
+        "sh",
+        [
+          "-c",
+          `ulimit -f 1; exec node ${JSON.stringify(join(process.cwd(), "dist/cli/index.js"))} fix --markdownlint-off ${JSON.stringify(filePath)}`,
+        ],
+        spawnOptions,
+      );
+
+      expect(result.status).toBe(1);
+      expect(await readFile(filePath, "utf8")).toBe(original);
+      expect((await readdir(cwd)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
+    },
+  );
+
   it("returns 2 when no files match the pattern", () => {
     const result = spawnSync(
       "node",
@@ -399,6 +479,17 @@ describe("CLI check/fix", () => {
 
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("--stdin requires --stdin-filepath");
+  });
+
+  it("returns 2 when an input path is empty", () => {
+    const result = spawnSync(
+      "node",
+      ["dist/cli/index.js", "check", ""],
+      spawnOptions,
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("Input paths must not be empty.");
   });
 
   it("returns 2 when paths are passed together with --stdin", () => {

@@ -85,6 +85,21 @@ describe("mergeOptions", () => {
     await expect(loadPanguConfig(undefined, cwd)).rejects.toBeInstanceOf(ConfigError);
   });
 
+  it.each([
+    [{ pangu: { enabled: "false" } }, "pangu.enabled"],
+    [{ pangu: { ignorePatterns: "README" } }, "pangu.ignorePatterns"],
+    [{ pangu: { ignorePatterns: [1] } }, "pangu.ignorePatterns"],
+    [{ pangu: { ignoreBlocks: {} } }, "pangu.ignoreBlocks"],
+    [{ pangu: null }, "pangu"],
+  ])("rejects invalid pangu config shape %#", async (config, field) => {
+    const cwd = await makeTempDir();
+    const configPath = join(cwd, ".markdownlint-pangu.json");
+
+    await writeFile(configPath, JSON.stringify(config));
+
+    await expect(loadPanguConfig(undefined, cwd)).rejects.toThrow(field);
+  });
+
   it("wraps missing markdownlint configs as ConfigError when path is provided", async () => {
     const cwd = await makeTempDir();
     const missingPath = join(cwd, "does-not-exist.json");

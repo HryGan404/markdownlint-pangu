@@ -43,7 +43,7 @@ markdownlint-pangu fix README.md
 markdownlint-pangu fix "docs/**/*.md"
 ```
 
-`fix` 会先尝试修复，然后重新检查。只有重新检查没有剩余诊断时，才会写回文件；如果仍有问题，会报告诊断，不写入部分修复结果。
+`fix` 会先尝试修复，然后重新检查。只有重新检查没有剩余诊断时，才会写回文件；如果仍有问题，会报告诊断，不写入部分修复结果。普通文件写回使用同目录临时文件和原子替换；对符号链接会更新真实目标并保留链接本身；对硬链接会原地更新共享 inode，使所有硬链接保持一致。
 
 ## 常用命令
 
@@ -123,7 +123,7 @@ pangu 功能默认开启，用于检查和修复中英文之间缺少空格，�
 这是 README 文件
 ```
 
-默认会处理这些 Markdown 文本区域：
+默认会处理这些 Markdown 文本区域中的普通文字：
 
 - 段落
 - 标题
@@ -137,11 +137,14 @@ pangu 功能默认开启，用于检查和修复中英文之间缺少空格，�
 
 - fenced code block
 - inline code
-- URL / link destination
+- URL / link destination，包括裸 URL、`www.` URL 和自动链接
 - HTML（含行内标签之间的文本）
 - front matter（目前仅识别 YAML `---`，不识别 TOML `+++`）
 - math block / inline math
 - definition / footnote 定义块（如 `[ref]: url`、`[^1]: ...`；行内脚注 `^[...]` 目前仍会被处理）
+- 链接文本和图片 alt 文本内的 inline code、math、emphasis、strong、delete 等语法节点
+
+如果补入空格会改变 Markdown AST 的块结构或语法节点结构，该组 pangu 修复会被安全跳过，不产生诊断。
 
 此外，工具会保留这些语法和标识符边界的原始状态：
 
@@ -175,6 +178,8 @@ markdownlint-pangu check --pangu-config path/to/.markdownlint-pangu.json README.
 - `ignoreBlocks`：如果一个安全文本块里包含匹配内容，跳过整个文本块
 
 `ignorePatterns` 和 `ignoreBlocks` 当前都是普通字符串匹配，不是正则表达式。
+
+配置字段会进行结构校验；`enabled` 必须是布尔值，`ignorePatterns` 和 `ignoreBlocks` 必须是字符串数组。
 
 ## 相对上游的默认差异
 
@@ -224,7 +229,7 @@ markdownlint-pangu fix --help
 
 - `0`：没有剩余诊断
 - `1`：存在诊断，或配置加载 / 运行过程出错；commander 的命令行解析错误（未知选项、非法 `--format` 值等）也返回 `1`
-- `2`：工具自身的参数校验错误（如未提供输入路径、`--stdin` 缺少 `--stdin-filepath`、stdin 模式下同时传入路径）
+- `2`：工具自身的参数校验错误（如未提供输入路径、空字符串路径、`--stdin` 缺少 `--stdin-filepath`、stdin 模式下同时传入路径）
 
 补充说明：
 

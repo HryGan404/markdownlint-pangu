@@ -109,16 +109,17 @@ describe("buildSpacingPatches", () => {
     expect(fixed).toBe("HTTP(S) 测试\uE1000\uE1001");
   });
 
-  it("throws when no private-use delimiter is available", () => {
+  it("uses a fallback delimiter when no private-use delimiter is available", () => {
     let privateUseCharacters = "";
     for (let codePoint = 0xe100; codePoint <= 0xf8ff; codePoint += 1) {
       privateUseCharacters += String.fromCodePoint(codePoint);
     }
-    const markdown = `HTTP(S)${privateUseCharacters}测试`;
+    const markdown = `HTTP(S)测试${privateUseCharacters}`;
 
-    expect(() => {
-      buildSpacingPatches(markdown, collectSafeRanges(markdown));
-    }).toThrow("Unable to allocate syntax placeholders");
+    const patches = buildSpacingPatches(markdown, collectSafeRanges(markdown));
+    const fixed = applyRangePatches(markdown, patches);
+
+    expect(fixed).toBe(`HTTP(S) 测试${privateUseCharacters}`);
   });
 
   it("does not add spacing around a literal double-asterisk boundary", () => {
@@ -278,18 +279,27 @@ describe("buildSpacingPatches", () => {
 });
 
 describe("applyRangePatches", () => {
-  it("applies many patches in linear time", () => {
+  it("applies many patches with near-linear growth", () => {
     const original = "中文ABC\n".repeat(10_000);
     const patches = Array.from({ length: 10_000 }, (_, index) => {
       const start = index * 6 + 2;
       return { start, end: start + 3, text: "ABC" };
     });
-    const startedAt = performance.now();
+    const largerOriginal = "中文ABC\n".repeat(40_000);
+    const largerPatches = Array.from({ length: 40_000 }, (_, index) => {
+      const start = index * 6 + 2;
+      return { start, end: start + 3, text: "ABC" };
+    });
 
-    const result = applyRangePatches(original, patches);
+    const smallStarted = performance.now();
+    expect(applyRangePatches(original, patches)).toBe(original);
+    const smallElapsed = performance.now() - smallStarted;
+    const largeStarted = performance.now();
+    expect(applyRangePatches(largerOriginal, largerPatches)).toBe(largerOriginal);
+    const largeElapsed = performance.now() - largeStarted;
 
-    expect(result).toBe(original);
-    expect(performance.now() - startedAt).toBeLessThan(1_000);
+    expect(largeElapsed).toBeLessThan(1_000);
+    expect(largeElapsed).toBeLessThan(Math.max(10, smallElapsed * 8));
   });
 
   it("builds masked spacing patches for an inline link", async () => {

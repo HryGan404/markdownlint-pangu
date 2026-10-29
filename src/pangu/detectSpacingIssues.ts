@@ -401,7 +401,18 @@ function choosePlaceholderDelimiter(text: string): string {
     }
   }
 
-  throw new Error("Unable to allocate syntax placeholders");
+  let nullRun = 0;
+  let longestNullRun = 0;
+  for (const character of text) {
+    if (character === "\0") {
+      nullRun += 1;
+      longestNullRun = Math.max(longestNullRun, nullRun);
+    } else {
+      nullRun = 0;
+    }
+  }
+
+  return "\0".repeat(longestNullRun + 1);
 }
 
 function restoreSpacingSyntax(

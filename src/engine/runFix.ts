@@ -3,6 +3,7 @@ import { applyFixes } from "markdownlint";
 import { runCheck } from "./runCheck.js";
 import { runMarkdownlint } from "../lint/runMarkdownlint.js";
 import { applyRangePatches } from "../markdown/applyRangePatches.js";
+import { hasEquivalentMarkdownStructure } from "../markdown/hasEquivalentMarkdownStructure.js";
 import { collectSpacingRanges } from "../markdown/safeRanges.js";
 import { buildMaskedSpacingPatchesWithDiagnostics } from "../pangu/buildSpacingPatches.js";
 import { filterIgnoredSpacingRanges } from "../pangu/filterIgnoredRanges.js";
@@ -30,7 +31,13 @@ export async function runFix(input: RunFixInput): Promise<RunFixResult> {
       ).map(({ start, end, text }) => ({ start, end, text }))
     : [];
 
-  const afterPangu = applyRangePatches(input.content, spacingPatches);
+  const afterPanguCandidate = applyRangePatches(input.content, spacingPatches);
+  const afterPangu = hasEquivalentMarkdownStructure(
+    input.content,
+    afterPanguCandidate,
+  )
+    ? afterPanguCandidate
+    : input.content;
 
   let fixedContent = afterPangu;
   if (input.options.markdownlint.enabled) {

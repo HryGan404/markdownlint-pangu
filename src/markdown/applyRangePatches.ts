@@ -23,12 +23,18 @@ export function applyRangePatches(input: string, patches: RangePatch[]): string 
     }
   }
 
-  const sorted = [...ascending].reverse();
-  let output = input;
-
-  for (const patch of sorted) {
-    output = `${output.slice(0, patch.start)}${patch.text}${output.slice(patch.end)}`;
+  if (ascending.length === 0) {
+    return input;
   }
 
-  return output;
+  const pieces: string[] = [];
+  let cursor = 0;
+
+  for (const patch of ascending) {
+    pieces.push(input.slice(cursor, patch.start), patch.text);
+    cursor = patch.end;
+  }
+
+  pieces.push(input.slice(cursor));
+  return pieces.join("");
 }

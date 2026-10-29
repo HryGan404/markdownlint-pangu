@@ -58,6 +58,39 @@ describe("collectSafeRanges", () => {
     expect(slices.some((slice) => slice === String.raw`foo\\\\`)).toBe(true);
   });
 
+  it("masks bare URLs and inline syntax in link labels and image alt text", () => {
+    const markdown = [
+      "访问https://e.test/path?x=中文ABC",
+      "",
+      "[**中文ABC**测试](u)",
+      "",
+      "![中文`ABC`测试](u)",
+    ].join("\n");
+    const ranges = collectSpacingRanges(markdown);
+
+    expect(ranges[0]?.blocked).toContainEqual({
+      start: markdown.indexOf("https://e.test/path?x=中文ABC"),
+      end: markdown.indexOf("\n\n[**"),
+    });
+    expect(ranges[1]?.blocked).toContainEqual({
+      start: markdown.indexOf("**中文ABC**"),
+      end: markdown.indexOf("测试](u)"),
+    });
+    expect(ranges[2]?.blocked).toContainEqual({
+      start: markdown.indexOf("`ABC`"),
+      end: markdown.indexOf("测试](u)", markdown.indexOf("![")),
+    });
+  });
+
+  it("does not collect spacing ranges from footnote definitions", () => {
+    const markdown = "正文[^1]\n\n[^1]: 脚注Footnote文本";
+    const ranges = collectSpacingRanges(markdown);
+
+    expect(ranges.some((range) => {
+      return markdown.slice(range.start, range.end).includes("脚注Footnote文本");
+    })).toBe(false);
+  });
+
   it("skips HTML embedded in image alt text", () => {
     const markdown = '![图片<span data-x="中文ABC">AltText</span>文本](u)';
     const htmlStart = markdown.indexOf("<span");

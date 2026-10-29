@@ -1,6 +1,11 @@
 import type { LintResults } from "markdownlint";
 import { lint } from "markdownlint/promise";
 
+import {
+  resolveMarkdownlintConfigKey,
+  resolveMarkdownlintRuleName,
+} from "./markdownlintRuleAliases.js";
+
 interface MarkdownlintRuleOptions {
   rules?: string[];
   disable?: string[];
@@ -42,7 +47,10 @@ function resolveMarkdownlintConfig(
       : withDefaultDisabledRules(config);
 
   for (const ruleName of disable) {
-    nextConfig[ruleName] = false;
+    const resolvedName = resolveMarkdownlintRuleName(ruleName);
+    for (const name of resolvedName) {
+      nextConfig[name] = false;
+    }
   }
 
   return nextConfig;
@@ -79,16 +87,22 @@ function buildRulesOnlyConfig(
   };
 
   for (const ruleName of rules) {
-    if (Object.hasOwn(config, ruleName)) {
-      const configured = config[ruleName];
-      nextConfig[ruleName] =
-        configured === false
-          ? true
-          : configured;
+    const configuredKey = resolveMarkdownlintConfigKey(config, ruleName);
+    if (configuredKey !== undefined) {
+      const configured = config[configuredKey];
+      const targetRuleNames = resolveMarkdownlintRuleName(ruleName);
+      for (const targetRuleName of targetRuleNames) {
+        nextConfig[targetRuleName] =
+          configured === false
+            ? true
+            : configured;
+      }
       continue;
     }
 
-    nextConfig[ruleName] = true;
+    for (const targetRuleName of resolveMarkdownlintRuleName(ruleName)) {
+      nextConfig[targetRuleName] = true;
+    }
   }
 
   return nextConfig;
